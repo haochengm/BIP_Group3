@@ -3,7 +3,7 @@ using UnityEngine;
 public class BallController : MonoBehaviour
 {
     private Rigidbody2D rb;
-
+    
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
@@ -12,11 +12,22 @@ public class BallController : MonoBehaviour
     public void Launch(Vector2 launchVelocity)
     {
         // Clean physics state before applying new velocity
-        rb.linearVelocity = Vector2.zero; 
+        rb.linearVelocity = Vector2.zero;
         rb.angularVelocity = 0f;
-        
-        
+
+
         // stable application of launch velocity
         rb.linearVelocity = launchVelocity;
+    }
+    
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        if (collision.gameObject.CompareTag("Hazard"))
+        {
+            rb.linearVelocity = Vector2.zero;
+            GameManager.Instance.GameOver();
+            gameObject.SetActive(false); // 先隐藏球，避免它继续碰撞
+           
+        }
     }
 }
