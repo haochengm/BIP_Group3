@@ -49,7 +49,7 @@ ParticleSystem:
   ringBufferLoopRange: {x: 0, y: 1}
   emitterVelocityMode: 1
   looping: 1
-  prewarm: 0
+  prewarm: 1
   playOnAwake: 1
   useUnscaledTime: 0
   autoRandomSeed: 1
@@ -116,7 +116,7 @@ ParticleSystem:
     startLifetime:
       serializedVersion: 2
       minMaxState: 0
-      scalar: 2
+      scalar: 3
       minScalar: 5
       maxCurve:
         serializedVersion: 2
@@ -751,7 +751,7 @@ ParticleSystem:
     sphericalDirectionAmount: 0
     randomPositionAmount: 0
     radius:
-      value: 1.8
+      value: 3.48
       mode: 0
       spread: 0
       speed:
@@ -870,7 +870,7 @@ ParticleSystem:
     rateOverTime:
       serializedVersion: 2
       minMaxState: 0
-      scalar: 30
+      scalar: 40
       minScalar: 10
       maxCurve:
         serializedVersion: 2
@@ -2630,7 +2630,7 @@ ParticleSystem:
     inWorldSpace: 0
     multiplyDragByParticleSize: 1
     multiplyDragByParticleVelocity: 1
-    dampen: 0.5
+    dampen: 0.3
     drag:
       serializedVersion: 2
       minMaxState: 0
@@ -5027,6 +5027,7 @@ GameObject:
   - component: {fileID: 3033340017086287528}
   - component: {fileID: 5328077160601862372}
   - component: {fileID: 6037229300644387408}
+  - component: {fileID: 6113913731845881364}
   m_Layer: 0
   m_Name: PlayerGravityWell
   m_TagString: Untagged
@@ -5044,7 +5045,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 1.9899, y: 1.9899, z: 1.9899}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 4617147354366106310}
@@ -5101,11 +5102,24 @@ PointEffector2D:
   m_ColliderMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  m_ForceMagnitude: -20
+  m_ForceMagnitude: -15
   m_ForceVariation: 0
   m_DistanceScale: 1
   m_ForceSource: 0
   m_ForceTarget: 0
-  m_ForceMode: 0
+  m_ForceMode: 1
   m_LinearDamping: 0
   m_AngularDamping: 0
+--- !u!114 &6113913731845881364
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8220294505345582814}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a8163243406b624aae1fdd14603b564, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GravityWell
+  gravityPhysicsDelay: 0.3

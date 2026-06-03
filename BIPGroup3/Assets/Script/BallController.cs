@@ -50,8 +50,11 @@ public class BallController : MonoBehaviour
             shipBounds.max.y < bgBounds.min.y ||
             shipBounds.min.y > bgBounds.max.y)
         {
+            Debug.Log("BallController：飞船完全出界了，触发失败！");
             TriggerOutOfBoundsFailure();
         }
+
+
     }
     
     private void TriggerOutOfBoundsFailure()

@@ -7,7 +7,7 @@ public class CameraFollow : MonoBehaviour
 
     [Header("跟随设置")]
     public float smoothTime = 0.3f;
-    public Vector3 offset = new Vector3(0f, 0f, -10f);
+    public Vector3 offset = new Vector3(0f, 0f, -20f);
 
     [Header("边界限制")]
     public SpriteRenderer backgroundSprite; // 把你的巨大背景图拖到这里
