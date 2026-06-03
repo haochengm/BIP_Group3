@@ -79,7 +79,7 @@ public class BallController : MonoBehaviour
         if (collision.gameObject.CompareTag("Destination"))
         {
             rb.linearVelocity = Vector2.zero;
-            GameManager.Instance.GameWin();
+            GameManager.Instance.LevelClear();
             gameObject.SetActive(false); // 先隐藏球，避免它继续碰撞
         }
     }

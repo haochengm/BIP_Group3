@@ -71,23 +71,22 @@ public class CannonController : MonoBehaviour
     {
         if (ballPrefab == null || launchPoint == null || hasFired) return;
 
-        // 生成炮弹
         GameObject spawnedBall = Instantiate(ballPrefab, launchPoint.position, Quaternion.identity);
         BallController ballController = spawnedBall.GetComponent<BallController>();
 
         if (ballController != null)
         {
-            // 使用固定的力度 (fixedForce) 发射
             Vector2 launchVelocity = launchPoint.right * fixedForce;
             ballController.Launch(launchVelocity);
-
+            
             PlayerGravityController.canUseGravity = true;
-            hasFired = true; // 标记已经发射过了，防止重复发射
+            hasFired = true; 
+
             CameraFollow camFollow = Camera.main.GetComponent<CameraFollow>();
-            if (camFollow != null)            {
-                camFollow.target = spawnedBall.transform;
-            }
+            if (camFollow != null) camFollow.target = spawnedBall.transform;
+
+            // 【新增这一行】：通知大管家，飞船上天了，立刻掐表计时！
+            GameManager.Instance.StartTimer(); 
         }
-        
     }
 }
