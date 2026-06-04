@@ -5,7 +5,7 @@ public class PlayerGravityController : MonoBehaviour
     [Header("引力点设置")]
     public GameObject gravityWellPrefab; // 引力点预制体
     public float maxGravityTime = 2f;    // 电池总电量（5秒）
-    public float cooldownDuration = 4f;  // 榨干后的冷却时间（5秒）
+    public float cooldownDuration = 2.5f;  // 榨干后的冷却时间（5秒）
 
     [Header("UI 绑定设置")]
     // 【新增】：拖入你场景中的 Slider 组件

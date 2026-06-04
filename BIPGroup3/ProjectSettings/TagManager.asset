@@ -5,16 +5,18 @@ TagManager:
   serializedVersion: 3
   tags:
   - Hazard
-  - Destination
+  - Destination2
+  - Destination3
+  - Destination1
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - MinimapOnly
   - Water
   - UI
-  - 
-  - 
+  - DebrisOnly
+  - BackgroundLayer1_2
   - 
   - 
   - 
@@ -51,3 +53,4 @@ TagManager:
     locked: 0
   m_RenderingLayers:
   - Default
+  - Layer 1

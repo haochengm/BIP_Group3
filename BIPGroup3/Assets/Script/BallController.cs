@@ -2,85 +2,157 @@ using UnityEngine;
 
 public class BallController : MonoBehaviour
 {
-    
     private Rigidbody2D rb;
     private Collider2D myCollider;
-    private bool isDestroyed = false;
+    private bool isDestroyed = false; 
+
+    [Header("拖尾特效设置")]
+    // 【核心修改】：从单个组件升级为组件数组，支持同时控制无限个拖尾
+    public TrailRenderer[] trailRenderers; 
+
+    // 用于记录火箭当前同时身处多少个引力场内
+    private int activeGravityFieldsCount = 0;
+
+    [Header("外观设置")]
+    public float spriteAngleOffset = -90f; 
+
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
-        myCollider = GetComponent<Collider2D>();
-    }
+        myCollider = GetComponent<Collider2D>(); 
 
+        // 【核心修改】：游戏开始时，遍历并确保关闭所有拖尾的发射
+        SetAllTrailsEmitting(false);
+    }
 
     public void Launch(Vector2 launchVelocity)
     {
-        // Clean physics state before applying new velocity
-        rb.linearVelocity = Vector2.zero;
+        rb.linearVelocity = Vector2.zero; 
         rb.angularVelocity = 0f;
+        rb.linearVelocity = launchVelocity; 
 
+        // 【核心修改】：发射瞬间，清空并关闭所有拖尾，防止拉丝
+        if (trailRenderers != null)
+        {
+            foreach (TrailRenderer trail in trailRenderers)
+            {
+                if (trail != null)
+                {
+                    trail.Clear();          
+                    trail.emitting = false; 
+                }
+            }
+        }
 
-        // stable application of launch velocity
-        rb.linearVelocity = launchVelocity;
+        activeGravityFieldsCount = 0;
     }
+
     private void Update()
     {
         CheckOutOfBounds();
     }
 
+    private void FixedUpdate()
+    {
+        if (PlayerGravityController.canUseGravity)
+        {
+            RotateTowardsVelocityPhysics();
+        }
+    }
+
+    private void RotateTowardsVelocityPhysics()
+    {
+        Vector2 velocity = rb.linearVelocity;
+
+        if (velocity.sqrMagnitude > 0.05f)
+        {
+            float angle = Mathf.Atan2(velocity.y, velocity.x) * Mathf.Rad2Deg;
+            rb.MoveRotation(angle + spriteAngleOffset);
+        }
+    }
+
+    private void OnTriggerEnter2D(Collider2D other)
+    {
+        
+
+        if (other.GetComponent<PointEffector2D>() != null)
+        {
+            if (other.GetComponent<GravityWell>() != null || other.GetComponentInParent<GravityWell>() != null)
+            {
+                return; 
+            }
+
+            activeGravityFieldsCount++;
+            UpdateTrailState();
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D other)
+    {
+        if (other.GetComponent<PointEffector2D>() != null)
+        {
+            if (other.GetComponent<GravityWell>() != null || other.GetComponentInParent<GravityWell>() != null)
+            {
+                return; 
+            }
+
+            activeGravityFieldsCount--;
+            if (activeGravityFieldsCount < 0) activeGravityFieldsCount = 0;
+            
+            UpdateTrailState();
+        }
+    }
+
+    private void UpdateTrailState()
+    {
+        // 根据计数决定开启或关闭所有拖尾
+        SetAllTrailsEmitting(activeGravityFieldsCount > 0);
+    }
+
+    // 【新增辅助方法】：一键统一控制所有拖尾的开关
+    private void SetAllTrailsEmitting(bool isEmitting)
+    {
+        if (trailRenderers == null) return;
+
+        foreach (TrailRenderer trail in trailRenderers)
+        {
+            if (trail != null)
+            {
+                trail.emitting = isEmitting;
+            }
+        }
+    }
+
     private void CheckOutOfBounds()
     {
         if (isDestroyed) return;
-
-        // 确保大管家和背景图都存在
         if (GameManager.Instance == null || GameManager.Instance.backgroundSprite == null) return;
 
-        // 1. 获取背景的边界
         Bounds bgBounds = GameManager.Instance.backgroundSprite.bounds;
-        // 2. 获取飞船自身的精确边界（算上了飞船的大小/半径）
         Bounds shipBounds = myCollider.bounds;
 
-        // 3. 核心数学判定：完全出界的条件
-        // 飞船的右边缘(max.x) 小于 背景的左边缘(min.x) -> 从左边完全飞出
-        // 飞船的左边缘(min.x) 大于 背景的右边缘(max.x) -> 从右边完全飞出
-        // 飞船的上边缘(max.y) 小于 背景的下边缘(min.y) -> 从下边完全飞出
-        // 飞船的下边缘(min.y) 大于 背景的上边缘(max.y) -> 从上边完全飞出
-        if (shipBounds.max.x < bgBounds.min.x ||
-            shipBounds.min.x > bgBounds.max.x ||
-            shipBounds.max.y < bgBounds.min.y ||
+        if (shipBounds.max.x < bgBounds.min.x || 
+            shipBounds.min.x > bgBounds.max.x || 
+            shipBounds.max.y < bgBounds.min.y || 
             shipBounds.min.y > bgBounds.max.y)
         {
-            Debug.Log("BallController：飞船完全出界了，触发失败！");
             TriggerOutOfBoundsFailure();
         }
-
-
     }
-    
+
     private void TriggerOutOfBoundsFailure()
     {
         isDestroyed = true;
         rb.linearVelocity = Vector2.zero;
-        gameObject.SetActive(false); // 隐藏飞船
-        
-        // 呼叫大管家
-        GameManager.Instance.GameOver1();
+        gameObject.SetActive(false); 
+        GameManager.Instance.GameOver();
     }
+
     private void OnCollisionEnter2D(Collision2D collision)
     {
         if (collision.gameObject.CompareTag("Hazard"))
         {
-            rb.linearVelocity = Vector2.zero;
-            GameManager.Instance.GameOver();
-            gameObject.SetActive(false); // 先隐藏球，避免它继续碰撞
-
-        }
-        
-        if (collision.gameObject.CompareTag("Destination"))
-        {
-            rb.linearVelocity = Vector2.zero;
-            GameManager.Instance.LevelClear();
-            gameObject.SetActive(false); // 先隐藏球，避免它继续碰撞
+            TriggerOutOfBoundsFailure();
         }
     }
 }
