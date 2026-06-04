@@ -14,9 +14,9 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI bestTimeText;      // 显示历史最佳时间
 
     // 【新增】：用于显示通关结果的文本（你可以把这个放到通关面板UI里）
-    public TextMeshProUGUI levelClearResultText; 
+    public TextMeshProUGUI levelClearResultText;
     public GameObject levelClearPanel;         // 【新增】：通关结算UI面板物体
-
+    public GameObject levelFailPanel;          // 【新增】：失败结算UI面板物体
     // 计时相关的私有变量
     private float currentTime = 0f;
     private bool isTimerRunning = false;
@@ -41,6 +41,7 @@ public class GameManager : MonoBehaviour
 
         // 【新增 UI 初始化】：确保通关面板隐藏
         if (levelClearPanel != null) levelClearPanel.SetActive(false);
+        if (levelFailPanel != null) levelFailPanel.SetActive(false);
     }
 
     private void Update()
@@ -65,15 +66,17 @@ public class GameManager : MonoBehaviour
         // 【新增状态重置】：开始计时前清空上一个终点记录
         lastReachedDestinationTag = null;
         if (levelClearPanel != null) levelClearPanel.SetActive(false);
+        if (levelFailPanel != null) levelFailPanel.SetActive(false);
 
         Debug.Log("【计时器】开始计时...");
     }
 
     public void GameOver()
     {
+        if (levelFailPanel != null) levelFailPanel.SetActive(true);
         isTimerRunning = false; // 失败了，停止计时
         Debug.Log("GameManager：游戏失败！");
-        Invoke("RestartLevel", 1f);
+        //Invoke("RestartLevel", 1f);
     }
 
     // 【新增/升级】：当飞船碰到任何一个目标星球时被呼叫
