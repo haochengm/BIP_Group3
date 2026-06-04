@@ -1,109 +1,89 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Video;
 
 /// <summary>
 /// Plays a sequence of intro/office videos with keyboard navigation.
-/// Videos pause on the last frame when they finish; the frame stays visible until the player presses a key.
+/// Uses an active background double-buffer to eliminate flicker and fixes Unity's background cache navigation bugs.
 /// </summary>
-///
-/// =============================================================================
-/// HOW TO SET UP IN THE INSPECTOR
-/// =============================================================================
-///
-/// 1) Assign the VideoPlayer
-///    - Create or select a GameObject with a VideoPlayer component (see scene setup below).
-///    - Drag that VideoPlayer into the "Video Player" field on this script.
-///
-/// 2) Assign the video clips (order matters!)
-///    - Set "Size" on the Video Clips array to 4.
-///    - Drag clips from Assets/Art/ in this order:
-///        Element 0 → Intro
-///        Element 1 → Office_1
-///        Element 2 → Office_2
-///        Element 3 → Office_3
-///    - Index 0 plays automatically when the scene starts.
-///
-/// 3) VideoPlayer recommended settings (Inspector on VideoPlayer component)
-///    - Play On Awake: OFF  (this script starts playback in Start())
-///    - Loop: OFF           (also forced in code)
-///    - Render Mode: choose UI (Raw Image) or Camera Far Plane / Material override
-///
-/// =============================================================================
-/// SCENE SETUP (if you are creating a new scene)
-/// =============================================================================
-///
-/// A) UI-based video (good for fullscreen intro on Canvas):
-///    1. File → New Scene → save as e.g. Assets/Scenes/IntroScene.unity
-///    2. GameObject → UI → Canvas (Screen Space Overlay)
-///    3. On Canvas: GameObject → UI → Raw Image (stretch to full screen)
-///    4. Select Canvas (or a child) → Add Component → Video Player
-///    5. Video Player: Render Mode = Render Texture OR Camera Near/Far Plane
-///       - Easiest UI path: create Render Texture (Assets → Create → Render Texture),
-///         assign it to Video Player "Target Texture", assign same texture to Raw Image "Texture"
-///    6. Empty GameObject → Add Component → Cinematic Intro Controller
-///    7. Wire Video Player + clips as described above
-///    8. Add this scene to File → Build Settings → Scenes In Build if needed
-///
-/// B) Camera-based video:
-///    1. Main Camera → Add Component → Video Player
-///    2. Render Mode = Camera Far Plane, set Target Camera to Main Camera
-///    3. Add CinematicIntroController on any GameObject and assign references
-///
-/// Controls: SPACE or RIGHT = next video | LEFT = previous video
-/// =============================================================================
 public class CinematicIntroController : MonoBehaviour
 {
     [Header("References")]
-    [Tooltip("The VideoPlayer in this scene (UI or Camera-based). Drag it here from the Hierarchy.")]
+    [Tooltip("The VideoPlayer in this scene. Drag it here from the Hierarchy.")]
     [SerializeField] private VideoPlayer videoPlayer;
 
     [Header("Video sequence (play order)")]
-    [Tooltip("Clips in play order: Intro, Office_1, Office_2, Office_3 from Assets/Art/")]
     [SerializeField] private VideoClip[] videoClips = new VideoClip[4];
 
-    /// <summary>Index of the clip currently assigned to the VideoPlayer (0 = Intro).</summary>
-    private int currentVideoIndex;
+    private VideoPlayer playerA;
+    private VideoPlayer playerB;
+    private VideoPlayer activePlayer;
 
-    /// <summary>True after a clip finishes and we are holding the last frame until input.</summary>
+    private int currentVideoIndex;
     private bool waitingForInputAfterEnd;
+    private bool isTransitioning;
 
     private void Awake()
     {
         if (videoPlayer == null)
         {
-            Debug.LogError("CinematicIntroController: Assign a VideoPlayer in the Inspector.", this);
+            Debug.LogError("CinematicIntroController: Assign a VideoPlayer.", this);
             enabled = false;
             return;
         }
 
-        // This script owns playback timing — do not auto-play or loop in the Inspector.
-        videoPlayer.playOnAwake = false;
-        videoPlayer.isLooping = false;
-        videoPlayer.loopPointReached += OnVideoFinished;
+        // Setup Player A (the original inspector player)
+        playerA = videoPlayer;
+        ConfigurePlayer(playerA);
+
+        // Clone Player B dynamically for seamless background loading
+        playerB = gameObject.AddComponent<VideoPlayer>();
+        ConfigurePlayer(playerB);
+        
+        // Match dimensions, targets, and routing
+        playerB.renderMode = playerA.renderMode;
+        playerB.targetTexture = playerA.targetTexture;
+        playerB.targetCamera = playerA.targetCamera;
+        playerB.aspectRatio = playerA.aspectRatio;
+        playerB.audioOutputMode = playerA.audioOutputMode;
+        
+        // Match audio routing
+        for (ushort i = 0; i < playerA.controlledAudioTrackCount; i++)
+            playerB.SetTargetAudioSource(i, playerA.GetTargetAudioSource(i));
+
+        // If using Camera planes, dim the backup player so it doesn't block the screen initially
+        if (playerB.renderMode == VideoRenderMode.CameraFarPlane || playerB.renderMode == VideoRenderMode.CameraNearPlane)
+        {
+            playerA.targetCameraAlpha = 1f;
+            playerB.targetCameraAlpha = 0f;
+        }
+
+        activePlayer = playerA;
+    }
+
+    private void ConfigurePlayer(VideoPlayer player)
+    {
+        player.playOnAwake = false;
+        player.isLooping = false;
+        player.waitForFirstFrame = true; 
+        player.loopPointReached += OnVideoFinished;
     }
 
     private void OnDestroy()
     {
-        if (videoPlayer != null)
-            videoPlayer.loopPointReached -= OnVideoFinished;
+        if (playerA != null) playerA.loopPointReached -= OnVideoFinished;
+        if (playerB != null) playerB.loopPointReached -= OnVideoFinished;
     }
 
     private void Start()
     {
-        if (videoClips == null || videoClips.Length == 0)
-        {
-            Debug.LogWarning("CinematicIntroController: No video clips assigned.", this);
-            return;
-        }
-
-        // Requirement: first video (Intro) plays automatically when the scene starts.
-        PlayVideoAtIndex(0);
+        if (videoClips != null && videoClips.Length > 0)
+            PlayVideoAtIndex(0);
     }
 
     private void Update()
     {
-        if (videoPlayer == null || videoClips == null || videoClips.Length == 0)
-            return;
+        if (isTransitioning) return; // Prevent input spamming while a video prepares
 
         if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.RightArrow))
             GoToNextVideo();
@@ -112,75 +92,85 @@ public class CinematicIntroController : MonoBehaviour
             GoToPreviousVideo();
     }
 
-    /// <summary>Called by Unity when the current clip reaches its end (requires isLooping = false).</summary>
     private void OnVideoFinished(VideoPlayer source)
     {
-        // Ignore if we switched clips and an old finish event fires.
-        if (source != videoPlayer)
-            return;
-
-        HoldOnLastFrame();
+        if (source != activePlayer) return;
+        
+        source.Pause(); // Freeze frame safely
         waitingForInputAfterEnd = true;
-    }
-
-    /// <summary>Keeps the final frame on screen (no fade, no clear).</summary>
-    private void HoldOnLastFrame()
-    {
-        videoPlayer.Pause();
-
-        if (videoPlayer.frameCount > 0)
-            videoPlayer.frame = (long)videoPlayer.frameCount - 1;
-        else if (videoPlayer.clip != null)
-            videoPlayer.time = Mathf.Max(0f, (float)videoPlayer.clip.length - 0.05f);
     }
 
     private void GoToNextVideo()
     {
-        int nextIndex = currentVideoIndex + 1;
-        if (nextIndex >= videoClips.Length)
-            return;
-
-        PlayVideoAtIndex(nextIndex);
+        if (currentVideoIndex + 1 < videoClips.Length)
+            PlayVideoAtIndex(currentVideoIndex + 1);
     }
 
     private void GoToPreviousVideo()
     {
-        int previousIndex = currentVideoIndex - 1;
-        if (previousIndex < 0)
-            return;
-
-        PlayVideoAtIndex(previousIndex);
+        if (currentVideoIndex - 1 >= 0)
+            PlayVideoAtIndex(currentVideoIndex - 1);
     }
 
-    /// <summary>
-    /// Switches to a clip by index: always starts at time 0 and plays immediately.
-    /// </summary>
     private void PlayVideoAtIndex(int index)
     {
-        if (index < 0 || index >= videoClips.Length)
-            return;
+        if (index < 0 || index >= videoClips.Length || videoClips[index] == null) return;
 
-        if (videoClips[index] == null)
-        {
-            Debug.LogWarning($"CinematicIntroController: Video clip at index {index} is missing.", this);
-            return;
-        }
-
+        isTransitioning = true;
         waitingForInputAfterEnd = false;
         currentVideoIndex = index;
 
-        videoPlayer.Stop();
-        videoPlayer.clip = videoClips[index];
-        videoPlayer.time = 0;
-        videoPlayer.frame = 0;
-        videoPlayer.isLooping = false;
-        videoPlayer.Play();
+        // Pick the idle background player
+        VideoPlayer nextPlayer = (activePlayer == playerA) ? playerB : playerA;
+
+        // FIX: If the background player already has this clip loaded and prepared from a previous swap,
+        // bypass Unity's broken Prepare() pipeline and jump straight to playing it.
+        if (nextPlayer.clip == videoClips[index] && nextPlayer.isPrepared)
+        {
+            nextPlayer.time = 0;
+            nextPlayer.frame = 0;
+            StartCoroutine(TransitionPlayers(nextPlayer));
+            return;
+        }
+
+        // Otherwise, perform a fresh prepare for a clip it hasn't seen yet
+        nextPlayer.clip = videoClips[index];
+        nextPlayer.time = 0;
+        nextPlayer.frame = 0;
+        
+        nextPlayer.prepareCompleted += OnPrepareCompleted;
+        nextPlayer.Prepare(); 
     }
 
-    /// <summary>Read-only access for other scripts or debug UI.</summary>
+    private void OnPrepareCompleted(VideoPlayer source)
+    {
+        source.prepareCompleted -= OnPrepareCompleted;
+        StartCoroutine(TransitionPlayers(source));
+    }
+
+    private IEnumerator TransitionPlayers(VideoPlayer newPlayer)
+    {
+        // Start playing the new video in the background/buffer
+        newPlayer.Play();
+
+        // Wait a frame to let the engine physically render the first frame of the new clip
+        yield return new WaitForEndOfFrame();
+
+        // Safe visual swap for camera render modes
+        if (newPlayer.renderMode == VideoRenderMode.CameraFarPlane || newPlayer.renderMode == VideoRenderMode.CameraNearPlane)
+        {
+            newPlayer.targetCameraAlpha = 1f;
+            activePlayer.targetCameraAlpha = 0f;
+        }
+
+        // Retire the old player to a paused state
+        activePlayer.Pause();
+
+        activePlayer = newPlayer;
+        isTransitioning = false;
+    }
+
     public int CurrentVideoIndex => currentVideoIndex;
-
     public int VideoCount => videoClips != null ? videoClips.Length : 0;
-
     public bool IsWaitingForInput => waitingForInputAfterEnd;
 }
