@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic; // 【重要】：引入列表系统
 
 public class BallController : MonoBehaviour
 {
@@ -6,27 +7,63 @@ public class BallController : MonoBehaviour
     private Collider2D myCollider;
     private bool isDestroyed = false; 
 
-    [Header("拖尾特效设置")]
-    public TrailRenderer[] trailRenderers;
-    private int activeGravityFieldsCount = 0;
-    public ParticleSystem rechargeFX;
-
-    [Header("外观设置")]
+    [Header("外观与特效设置")]
     public float spriteAngleOffset = -90f; 
+    public TrailRenderer[] trailRenderers; 
+    public ParticleSystem rechargeFX; 
+
+    private int activeGravityFieldsCount = 0;
 
     // ==========================================
-    // 【新增】：绕星充能检测专属变量
+    // 【核心数据结构】：为每个星球定制的独立“角度账本”
     // ==========================================
-    private Transform currentOrbitPlanet;    // 当前正在绕哪个星球飞行
-    private float previousOrbitAngle;        // 上一帧飞船相对星球的角度
-    private float accumulatedOrbitAngle;     // 已经累加旋转了多少度
+    private class OrbitTracker
+    {
+        public Transform planet;         // 目标星球
+        public float previousAngle;     // 上一帧飞船相对该星球的角度
+        public float accumulatedAngle;  // 已经相对该星球累加转过了多少度
+
+        public OrbitTracker(Transform planetTransform, Vector3 rocketPos)
+        {
+            planet = planetTransform;
+            // 初始化这一瞬间的相对角度
+            Vector2 dir = rocketPos - planet.position;
+            previousAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+            accumulatedAngle = 0f;
+        }
+
+        // 每帧更新角度，转满一圈时通过 Action 回调通知火箭
+        public void UpdateOrbit(Vector3 rocketPos, System.Action onCompleteCircle)
+        {
+            if (planet == null) return;
+
+            // 计算当前帧的相对角度
+            Vector2 dir = rocketPos - planet.position;
+            float currentAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+
+            // 计算与上一帧的角度差（自动处理180到-180的跨越）
+            float delta = Mathf.DeltaAngle(previousAngle, currentAngle);
+            
+            accumulatedAngle += delta;
+            previousAngle = currentAngle;
+
+            // 检查该星球的独立进度是否达到一圈
+            if (Mathf.Abs(accumulatedAngle) >= 360f)
+            {
+                accumulatedAngle -= Mathf.Sign(accumulatedAngle) * 360f; // 扣除一圈，允许继续套圈
+                onCompleteCircle?.Invoke(); // 触发充能回调
+            }
+        }
+    }
+
+    // 【核心容器】：当前正在同时追踪的所有星球账本列表
+    private List<OrbitTracker> activeOrbitTrackers = new List<OrbitTracker>();
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
-        myCollider = GetComponent<Collider2D>();
+        myCollider = GetComponent<Collider2D>(); 
         SetAllTrailsEmitting(false);
-        if (rechargeFX != null) rechargeFX.Stop();
     }
 
     public void Launch(Vector2 launchVelocity)
@@ -47,15 +84,17 @@ public class BallController : MonoBehaviour
             }
         }
         activeGravityFieldsCount = 0;
-        currentOrbitPlanet = null; // 重置绕星数据
+
+        // 发射时务必清空所有未完成的轨道记录
+        activeOrbitTrackers.Clear();
     }
 
     private void Update()
     {
         CheckOutOfBounds();
 
-        // 【新增】：每帧检测是否在绕星
-        TrackOrbitForRecharge();
+        // 【核心修改】：每帧遍历列表，独立更新所有当前身处引力场内的星球进度
+        TrackAllActiveOrbits();
     }
 
     private void FixedUpdate()
@@ -76,41 +115,37 @@ public class BallController : MonoBehaviour
         }
     }
 
-    // ==========================================
-    // 【核心新增】：轨道角度数学追踪
-    // ==========================================
-    private void TrackOrbitForRecharge()
+    // 同时追踪所有身处引力圈的星球
+    private void TrackAllActiveOrbits()
     {
-        // 只有被星球引力场捕获时才计算
-        if (currentOrbitPlanet == null) return;
-
-        // 1. 计算飞船当前相对于星球中心点的角度
-        Vector2 dir = transform.position - currentOrbitPlanet.position;
-        float currentAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-
-        // 2. 计算这一帧转过的角度差 (Mathf.DeltaAngle 非常聪明，能完美处理 180度 到 -180度 的跨越)
-        float delta = Mathf.DeltaAngle(previousOrbitAngle, currentAngle);
-        
-        // 3. 将角度差累加
-        accumulatedOrbitAngle += delta;
-        previousOrbitAngle = currentAngle;
-
-        // 4. 检查是否转满了一圈 (360度)
-        if (Mathf.Abs(accumulatedOrbitAngle) >= 360f)
+        // 倒序遍历列表，这样在运行中如果有星球被销毁或移除，不会引发索引报错
+        for (int i = activeOrbitTrackers.Count - 1; i >= 0; i--)
         {
-            // 扣除这 360 度，如果玩家继续转圈，还能继续充能
-            accumulatedOrbitAngle -= Mathf.Sign(accumulatedOrbitAngle) * 360f;
+            var tracker = activeOrbitTrackers[i];
+            
+            // 安全防错：如果星球本身被隐藏或销毁了，移出列表
+            if (tracker.planet == null || !tracker.planet.gameObject.activeInHierarchy)
+            {
+                activeOrbitTrackers.RemoveAt(i);
+                continue;
+            }
 
-            // 呼叫大管家：充能！
-            if (PlayerGravityController.Instance != null)
+            // 更新这个星球的角度，并传入充能成功后要执行的“烟花代码”
+            tracker.UpdateOrbit(transform.position, () => 
             {
-                PlayerGravityController.Instance.RefillEnergy();
-            }
-            if (rechargeFX != null)
-            {
-                rechargeFX.Stop(); // 先停止可能正在播放的（安全重置）
-                rechargeFX.Play(); // 嘭！烟花爆开
-            }
+                // 1. 电池充能
+                if (PlayerGravityController.Instance != null)
+                {
+                    PlayerGravityController.Instance.RefillEnergy();
+                }
+
+                // 2. 烟花爆发
+                if (rechargeFX != null)
+                {
+                    rechargeFX.Stop();
+                    rechargeFX.Play();
+                }
+            });
         }
     }
 
@@ -123,13 +158,10 @@ public class BallController : MonoBehaviour
             activeGravityFieldsCount++;
             UpdateTrailState();
 
-            // 【新增】：当钻进星球引力圈时，开始记录轨道初始数据
-            if (currentOrbitPlanet == null)
+            // 【核心修复】：进入引力圈时，只要列表中没有这个星球，就为它单独新建一个账本
+            if (!IsAlreadyTracking(other.transform))
             {
-                currentOrbitPlanet = other.transform;
-                Vector2 dir = transform.position - currentOrbitPlanet.position;
-                previousOrbitAngle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-                accumulatedOrbitAngle = 0f; // 进度清零
+                activeOrbitTrackers.Add(new OrbitTracker(other.transform, transform.position));
             }
         }
     }
@@ -145,11 +177,29 @@ public class BallController : MonoBehaviour
             
             UpdateTrailState();
 
-            // 【新增】：当飞出当前星球引力圈时，清空绕圈数据，防止玩家作弊（比如转半圈飞走又飞回来凑一圈）
-            if (currentOrbitPlanet == other.transform)
+            // 【核心修复】：离开某个引力圈时，精准地将对应的星球账本销毁，其余重叠星球的账本不受影响！
+            RemoveOrbitTracker(other.transform);
+        }
+    }
+
+    // 辅助检查：是否已经在追踪某个星球
+    private bool IsAlreadyTracking(Transform planetTransform)
+    {
+        foreach (var tracker in activeOrbitTrackers)
+        {
+            if (tracker.planet == planetTransform) return true;
+        }
+        return false;
+    }
+
+    // 辅助移除：删除指定星球的账本
+    private void RemoveOrbitTracker(Transform planetTransform)
+    {
+        for (int i = activeOrbitTrackers.Count - 1; i >= 0; i--)
+        {
+            if (activeOrbitTrackers[i].planet == planetTransform)
             {
-                currentOrbitPlanet = null;
-                accumulatedOrbitAngle = 0f;
+                activeOrbitTrackers.RemoveAt(i);
             }
         }
     }
@@ -168,7 +218,6 @@ public class BallController : MonoBehaviour
         }
     }
 
-    // 边界和死亡逻辑保持不变
     private void CheckOutOfBounds()
     {
         if (isDestroyed) return;

@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using TMPro; // 引入 TextMeshPro 命名空间
-
+using UnityEngine.UI;
 public class GameManager : MonoBehaviour
 {
     public static GameManager Instance { get; private set; }
@@ -16,6 +16,10 @@ public class GameManager : MonoBehaviour
     // 【新增】：用于显示通关结果的文本（你可以把这个放到通关面板UI里）
     public TextMeshProUGUI levelClearResultText;
     public GameObject levelClearPanel;         // 【新增】：通关结算UI面板物体
+    public Image levelClearResultImage;          // 【新增】：通关结果的图片组件（可以放在通关面板里）
+    public Sprite resultSprite1; // 【新增】：不同终点的通关结果图（可选）
+    public Sprite resultSprite2;        
+    public Sprite resultSprite3;
     public GameObject levelFailPanel;          // 【新增】：失败结算UI面板物体
     // 计时相关的私有变量
     private float currentTime = 0f;
@@ -155,32 +159,41 @@ public class GameManager : MonoBehaviour
     // 【核心新增】：根据最后终点，在通关面板上显示不同的文本
     private void ShowSpecificLevelClearResult()
     {
-        if (levelClearPanel == null || levelClearResultText == null) return;
+        if (levelClearPanel == null) return;
 
         // 呼出通关 UI 面板
         levelClearPanel.SetActive(true);
 
-        // 格式化当前时间，用于文本显示
+        // 格式化当前时间
         int minutes = Mathf.FloorToInt(currentTime / 60f);
         int seconds = Mathf.FloorToInt(currentTime % 60f);
         int milliseconds = Mathf.FloorToInt((currentTime * 100f) % 100f);
         string clearTimeStr = string.Format("{0:00}:{1:00}.{2:00}", minutes, seconds, milliseconds);
 
-        // 使用 Switch 语句根据 Tag 决定显示哪个通关结果
-        switch (lastReachedDestinationTag)
+        // 如果保留了文字组件，可以让它专门用来显示最终成绩
+        if (levelClearResultText != null)
         {
-            case "Destination1":
-                levelClearResultText.text = "【通关结果 1】\n恭喜！你成功抵达了『阿尔法星云』。你的飞行路径极其高效，为后续科研开辟了新航道。\n\n最终用时: " + clearTimeStr;
-                break;
-            case "Destination2":
-                levelClearResultText.text = "【通关结果 2】\n恭喜！你降落在『贝塔矿业星球』。这里资源丰富，你将成为星际矿业大亨的继承人！\n\n最终用时: " + clearTimeStr;
-                break;
-            case "Destination3":
-                levelClearResultText.text = "【通关结果 3】\n恭喜！你来到了『伽马流浪基地』。这是一个充满自由和冒险的地方，也是星际海盗的乐园！\n\n最终用时: " + clearTimeStr;
-                break;
-            default:
-                levelClearResultText.text = "【未知通关状态】\n玩家到达了一个没有预设通关结果的目的地。";
-                break;
+            levelClearResultText.text = "最终通关用时: " + clearTimeStr;
+        }
+
+        // 【核心修改】：使用 Switch 语句根据 Tag 决定给 UI Image 塞哪张图片
+        if (levelClearResultImage != null)
+        {
+            switch (lastReachedDestinationTag)
+            {
+                case "Destination1":
+                    levelClearResultImage.sprite = resultSprite1;
+                    break;
+                case "Destination2":
+                    levelClearResultImage.sprite = resultSprite2;
+                    break;
+                case "Destination3":
+                    levelClearResultImage.sprite = resultSprite3;
+                    break;
+                default:
+                    Debug.LogWarning("【未知通关状态】玩家到达了一个没有预设图片的终点。");
+                    break;
+            }
         }
     }
 
