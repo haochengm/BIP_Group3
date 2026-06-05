@@ -2,6 +2,8 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
+using UnityEngine.SceneManagement; // 新增：用于场景切换
+using TMPro; // 新增：用于使用 TextMeshPro 文本
 
 /// <summary>
 /// Plays a sequence of intro/office videos with keyboard navigation.
@@ -20,6 +22,14 @@ public class CinematicIntroController : MonoBehaviour
     [Header("Video sequence (play order)")]
     [SerializeField] private VideoClip[] videoClips = new VideoClip[4];
 
+    [Header("Countdown Settings")]
+    [Tooltip("用于显示倒计时的 TextMeshPro 组件")]
+    [SerializeField] private TextMeshProUGUI countdownText;
+    [Tooltip("倒计时时间（秒），默认 60 秒 = 1 分钟")]
+    [SerializeField] private float countdownDuration = 60f;
+    [Tooltip("倒计时结束后要跳转的场景名称")]
+    [SerializeField] private string nextSceneName = "Scene2";
+
     private VideoPlayer playerA;
     private VideoPlayer playerB;
     private VideoPlayer activePlayer;
@@ -27,6 +37,7 @@ public class CinematicIntroController : MonoBehaviour
     private int currentVideoIndex;
     private bool waitingForInputAfterEnd;
     private bool isTransitioning;
+    private bool isCountingDown; // 新增：防止倒计时被多次触发
 
     private void Awake()
     {
@@ -72,6 +83,12 @@ public class CinematicIntroController : MonoBehaviour
     {
         HideFinalFrameUI();
 
+        // 初始状态隐藏倒计时 UI
+        if (countdownText != null)
+        {
+            countdownText.gameObject.SetActive(false);
+        }
+
         if (videoClips != null && videoClips.Length > 0)
             PlayVideoAtIndex(0);
     }
@@ -91,19 +108,22 @@ public class CinematicIntroController : MonoBehaviour
     }
 
     private void Update()
-{
-    if (isTransitioning) return;
-
-    if (Input.GetKeyDown(KeyCode.Space) || 
-        Input.GetKeyDown(KeyCode.RightArrow) ||
-        Input.GetMouseButtonDown(0))
     {
-        GoToNextVideo();
-    }
+        if (isTransitioning) return;
 
-    if (Input.GetKeyDown(KeyCode.LeftArrow))
-        GoToPreviousVideo();
-}
+        // 如果已经在倒计时了，屏蔽跳过视频的按键输入
+        if (isCountingDown) return; 
+
+        if (Input.GetKeyDown(KeyCode.Space) || 
+            Input.GetKeyDown(KeyCode.RightArrow) ||
+            Input.GetMouseButtonDown(0))
+        {
+            GoToNextVideo();
+        }
+
+        if (Input.GetKeyDown(KeyCode.LeftArrow))
+            GoToPreviousVideo();
+    }
 
     private void OnVideoFinished(VideoPlayer source)
     {
@@ -111,6 +131,12 @@ public class CinematicIntroController : MonoBehaviour
         
         source.Pause(); // Freeze frame safely
         waitingForInputAfterEnd = true;
+
+        // 判断是否是最后一个视频
+        if (currentVideoIndex == videoClips.Length - 1 && !isCountingDown)
+        {
+            StartCoroutine(StartCountdownRoutine());
+        }
     }
 
     private void GoToNextVideo()
@@ -138,8 +164,6 @@ public class CinematicIntroController : MonoBehaviour
         // Pick the idle background player
         VideoPlayer nextPlayer = (activePlayer == playerA) ? playerB : playerA;
 
-        // FIX: If the background player already has this clip loaded and prepared from a previous swap,
-        // bypass Unity's broken Prepare() pipeline and jump straight to playing it.
         if (nextPlayer.clip == videoClips[index] && nextPlayer.isPrepared)
         {
             nextPlayer.time = 0;
@@ -148,7 +172,6 @@ public class CinematicIntroController : MonoBehaviour
             return;
         }
 
-        // Otherwise, perform a fresh prepare for a clip it hasn't seen yet
         nextPlayer.clip = videoClips[index];
         nextPlayer.time = 0;
         nextPlayer.frame = 0;
@@ -165,64 +188,80 @@ public class CinematicIntroController : MonoBehaviour
 
     private IEnumerator TransitionPlayers(VideoPlayer newPlayer)
     {
-        // Start playing the new video in the background/buffer
         newPlayer.Play();
-
-        // Wait a frame to let the engine physically render the first frame of the new clip
         yield return new WaitForEndOfFrame();
 
-        // Safe visual swap for camera render modes
         if (newPlayer.renderMode == VideoRenderMode.CameraFarPlane || newPlayer.renderMode == VideoRenderMode.CameraNearPlane)
         {
             newPlayer.targetCameraAlpha = 1f;
             activePlayer.targetCameraAlpha = 0f;
         }
 
-        // Retire the old player to a paused state
         activePlayer.Pause();
-
         activePlayer = newPlayer;
         isTransitioning = false;
     }
 
-    /// <summary>Shows the fullscreen final-frame PNG overlay. Call when the cinematic should end on a still image.</summary>
+    // --- 新增：倒计时与场景跳转协程 ---
+    private IEnumerator StartCountdownRoutine()
+    {
+        isCountingDown = true;
+        
+        // 可选：在倒计时开始时，如果你想展示最后一张 PNG，可以解除下面的注释
+        // ShowFinalPNG(); 
+
+        // 显示倒计时文本
+        if (countdownText != null)
+        {
+            countdownText.gameObject.SetActive(true);
+        }
+
+        float currentTime = countdownDuration;
+
+        while (currentTime > 0)
+        {
+            if (countdownText != null)
+            {
+                // 将秒数格式化为 MM:SS，例如 "01:00" 或 "00:59"
+                int minutes = Mathf.FloorToInt(currentTime / 60);
+                int seconds = Mathf.FloorToInt(currentTime % 60);
+                countdownText.text = string.Format("{0:00}:{1:00}", minutes, seconds);
+            }
+
+            // 等待一秒钟（使用真实时间流逝）
+            yield return new WaitForSeconds(1f);
+            currentTime--;
+        }
+
+        // 倒计时到达 0，执行场景跳转
+        if (countdownText != null) countdownText.text = "00:00";
+        SceneManager.LoadScene(nextSceneName);
+    }
+
     public void ShowFinalPNG()
     {
-        if (finalFrameUI == null)
-            return;
-
+        if (finalFrameUI == null) return;
         ApplyFullscreenLayout(finalFrameUI);
         finalFrameUI.SetActive(true);
     }
 
     private void InitializeFinalFrameUI()
     {
-        if (finalFrameUI == null)
-            return;
-
+        if (finalFrameUI == null) return;
         ApplyFullscreenLayout(finalFrameUI);
         finalFrameUI.SetActive(false);
     }
 
     private void HideFinalFrameUI()
     {
-        if (finalFrameUI == null)
-            return;
-
+        if (finalFrameUI == null) return;
         finalFrameUI.SetActive(false);
     }
 
     private void ApplyFullscreenLayout(GameObject uiRoot)
     {
         RectTransform rect = uiRoot.GetComponent<RectTransform>();
-        if (rect == null)
-        {
-            Debug.LogWarning("CinematicIntroController: finalFrameUI has no RectTransform.", uiRoot);
-            return;
-        }
-
-        if (uiRoot.GetComponentInParent<Canvas>() == null)
-            Debug.LogWarning("CinematicIntroController: finalFrameUI should be a child of a Canvas.", uiRoot);
+        if (rect == null) return;
 
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
@@ -234,10 +273,8 @@ public class CinematicIntroController : MonoBehaviour
         rect.localRotation = Quaternion.identity;
 
         uiRoot.transform.SetAsLastSibling();
-
         Image image = uiRoot.GetComponent<Image>();
-        if (image != null)
-            image.preserveAspect = false;
+        if (image != null) image.preserveAspect = false;
     }
 
     public int CurrentVideoIndex => currentVideoIndex;
