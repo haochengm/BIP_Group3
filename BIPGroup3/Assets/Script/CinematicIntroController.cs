@@ -91,15 +91,19 @@ public class CinematicIntroController : MonoBehaviour
     }
 
     private void Update()
+{
+    if (isTransitioning) return;
+
+    if (Input.GetKeyDown(KeyCode.Space) || 
+        Input.GetKeyDown(KeyCode.RightArrow) ||
+        Input.GetMouseButtonDown(0))
     {
-        if (isTransitioning) return; // Prevent input spamming while a video prepares
-
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.RightArrow))
-            GoToNextVideo();
-
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
-            GoToPreviousVideo();
+        GoToNextVideo();
     }
+
+    if (Input.GetKeyDown(KeyCode.LeftArrow))
+        GoToPreviousVideo();
+}
 
     private void OnVideoFinished(VideoPlayer source)
     {
