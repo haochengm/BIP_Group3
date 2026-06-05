@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Video;
 
 /// <summary>
@@ -11,6 +12,10 @@ public class CinematicIntroController : MonoBehaviour
     [Header("References")]
     [Tooltip("The VideoPlayer in this scene. Drag it here from the Hierarchy.")]
     [SerializeField] private VideoPlayer videoPlayer;
+
+    [Header("Final frame PNG overlay")]
+    [Tooltip("Fullscreen UI Image (PNG). Hidden during videos; shown only via ShowFinalPNG().")]
+    [SerializeField] private GameObject finalFrameUI;
 
     [Header("Video sequence (play order)")]
     [SerializeField] private VideoClip[] videoClips = new VideoClip[4];
@@ -59,6 +64,16 @@ public class CinematicIntroController : MonoBehaviour
         }
 
         activePlayer = playerA;
+
+        InitializeFinalFrameUI();
+    }
+
+    private void Start()
+    {
+        HideFinalFrameUI();
+
+        if (videoClips != null && videoClips.Length > 0)
+            PlayVideoAtIndex(0);
     }
 
     private void ConfigurePlayer(VideoPlayer player)
@@ -73,12 +88,6 @@ public class CinematicIntroController : MonoBehaviour
     {
         if (playerA != null) playerA.loopPointReached -= OnVideoFinished;
         if (playerB != null) playerB.loopPointReached -= OnVideoFinished;
-    }
-
-    private void Start()
-    {
-        if (videoClips != null && videoClips.Length > 0)
-            PlayVideoAtIndex(0);
     }
 
     private void Update()
@@ -115,6 +124,8 @@ public class CinematicIntroController : MonoBehaviour
     private void PlayVideoAtIndex(int index)
     {
         if (index < 0 || index >= videoClips.Length || videoClips[index] == null) return;
+
+        HideFinalFrameUI();
 
         isTransitioning = true;
         waitingForInputAfterEnd = false;
@@ -168,6 +179,61 @@ public class CinematicIntroController : MonoBehaviour
 
         activePlayer = newPlayer;
         isTransitioning = false;
+    }
+
+    /// <summary>Shows the fullscreen final-frame PNG overlay. Call when the cinematic should end on a still image.</summary>
+    public void ShowFinalPNG()
+    {
+        if (finalFrameUI == null)
+            return;
+
+        ApplyFullscreenLayout(finalFrameUI);
+        finalFrameUI.SetActive(true);
+    }
+
+    private void InitializeFinalFrameUI()
+    {
+        if (finalFrameUI == null)
+            return;
+
+        ApplyFullscreenLayout(finalFrameUI);
+        finalFrameUI.SetActive(false);
+    }
+
+    private void HideFinalFrameUI()
+    {
+        if (finalFrameUI == null)
+            return;
+
+        finalFrameUI.SetActive(false);
+    }
+
+    private void ApplyFullscreenLayout(GameObject uiRoot)
+    {
+        RectTransform rect = uiRoot.GetComponent<RectTransform>();
+        if (rect == null)
+        {
+            Debug.LogWarning("CinematicIntroController: finalFrameUI has no RectTransform.", uiRoot);
+            return;
+        }
+
+        if (uiRoot.GetComponentInParent<Canvas>() == null)
+            Debug.LogWarning("CinematicIntroController: finalFrameUI should be a child of a Canvas.", uiRoot);
+
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+        rect.localScale = Vector3.one;
+        rect.localRotation = Quaternion.identity;
+
+        uiRoot.transform.SetAsLastSibling();
+
+        Image image = uiRoot.GetComponent<Image>();
+        if (image != null)
+            image.preserveAspect = false;
     }
 
     public int CurrentVideoIndex => currentVideoIndex;
